@@ -33,38 +33,37 @@ middleware = [
         allow_headers=['*']
     )
 ]
-          
-cloudinary.config( 
-  cloud_name = settings.cloud_name, 
-  api_key = settings.api_key, 
-  api_secret = settings.api_secret
+
+cloudinary.config(
+    cloud_name=settings.cloud_name,
+    api_key=settings.api_key,
+    api_secret=settings.api_secret
 )
 app = FastAPI(middleware=middleware,)
 
 
-@app.get("/api", response_model=List[schemas.Video])
-def get_all_videos(db: Session = Depends(get_db),):
-    videos = db.query(models.Video).all()
-    return videos
-
 @app.post("/api")
-async def upload_video(file: UploadFile = File(...), email:str = Form(), db: Session = Depends(get_db),):
-    print("here")
+async def upload_video(file: UploadFile = File(...), email: str = Form(), db: Session = Depends(get_db),):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         user = models.User(email=email)
         db.add(user)
         db.commit()
-    data = cloudinary.uploader.upload(file.file, resource_type="video")
-    print(data)
-    new_video = models.Video(**{"user_id":user.id, "video_url":data["url"], "public_id":data["public_id"], "created_at":data["created_at"]})
+    try:
+        data = cloudinary.uploader.upload(file.file, resource_type="video")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Cloudinary Upload Error: "+str(e))
+    new_video = models.Video(
+        **{"user_id": user.id, "video_url": data["url"], "public_id": data["public_id"], "created_at": data["created_at"]})
     db.add(new_video)
     db.commit()
     db.refresh(new_video)
     return new_video
 
+
 @app.put("/api/{id}", response_model=schemas.Video)
-def post_video(id:int, time: schemas.VideoTimeUpdate, db: Session = Depends(get_db),):
+def update_playback_time(id: int, time: schemas.VideoTimeUpdate, db: Session = Depends(get_db),):
     video_query = db.query(models.Video).filter(
         models.Video.id == id)
     video = video_query.first()
@@ -75,6 +74,7 @@ def post_video(id:int, time: schemas.VideoTimeUpdate, db: Session = Depends(get_
     db.commit()
     return video_query.first()
 
+
 @app.delete("/api/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_video(id: int, db: Session = Depends(get_db),):
     video_query = db.query(models.Video).filter(
@@ -84,37 +84,37 @@ def delete_video(id: int, db: Session = Depends(get_db),):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"video with id -> {id} not found")
     try:
-        # Attempt to delete the video from Cloudinary
-        result = cloudinary.uploader.destroy(video.public_id, resource_type="video")
-        print(result)
-
-        # The result will contain a 'result' key with value 'ok' if the deletion was successful
+        result = cloudinary.uploader.destroy(
+            video.public_id, resource_type="video")
         if result.get("result") == "ok":
-             video_query.delete(synchronize_session=False)
-             db.commit()
-             return
+            video_query.delete(synchronize_session=False)
+            db.commit()
+            return
         else:
-            raise HTTPException(status_code=400, detail="Failed to delete video")
+            raise HTTPException(
+                status_code=400, detail="Failed to delete video")
 
     except Exception as e:
-        # Handle any exceptions that might occur
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @app.get("/api/users/{email}/videos", response_model=List[schemas.Video])
-def get_user_videos(email:str, db: Session = Depends(get_db),):
+def get_user_videos(email: str, db: Session = Depends(get_db),):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"user with email -> {email} not found")
-    videos = db.query(models.Video).filter(models.Video.user_id == user.id).all()
+    videos = db.query(models.Video).filter(
+        models.Video.user_id == user.id).all()
     return videos
 
+
 @app.get("/api/users/{email}/videos/latest", response_model=schemas.Video)
-def get_latest_video(email:str, db: Session = Depends(get_db),):
+def get_latest_video(email: str, db: Session = Depends(get_db),):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"user with email -> {email} not found")
-    video = db.query(models.Video).filter(models.Video.user_id == user.id).order_by(desc(models.Video.created_at)).first()
+    video = db.query(models.Video).filter(models.Video.user_id == user.id).order_by(
+        desc(models.Video.created_at)).first()
     return video
-
