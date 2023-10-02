@@ -1,3 +1,5 @@
+import uvicorn
+import os
 from typing import List
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +10,8 @@ from fastapi import FastAPI
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from . import models, schemas
-from .database import engine, get_db
+from app import models, schemas
+from app.database import engine, get_db
 from app.config import settings
 
 
@@ -118,3 +120,8 @@ def get_latest_video(email: str, db: Session = Depends(get_db),):
     video = db.query(models.Video).filter(models.Video.user_id == user.id).order_by(
         desc(models.Video.created_at)).first()
     return video
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", port=port, log_level="info", reload=True)
